@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./amazon_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./amazon_backend:/app
+    networks:
+      - amazonnet
+
+  frontend:
+    build: ./amazon_frontend
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./amazon_frontend:/app
+    depends_on:
+      - backend
+    networks:
+      - amazonnet
+
+networks:
+  amazonnet:
+    driver: bridge
