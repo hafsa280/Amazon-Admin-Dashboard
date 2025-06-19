@@ -5,7 +5,7 @@ from datetime import datetime
 
 class User(Base):
     __tablename__ = "users"
-    user_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, primary_key=True, index=True, autoincrement=False)
     name = Column(String(255), nullable=False)
     email = Column(String(255), unique=True, nullable=False)
     password = Column(String(255), nullable=False)
@@ -35,3 +35,12 @@ class Order(Base):
     order_date = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="orders")
+    
+class AdminActivityLog(Base):
+    __tablename__ = "admin_activity_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    admin_name = Column(String, nullable=False)
+    action = Column(String, nullable=False)  # e.g., add/update/delete
+    target_table = Column(String, nullable=False)  # e.g., users/products/orders
+    timestamp = Column(DateTime, default=datetime.utcnow)

@@ -3,11 +3,17 @@ from app import models, schemas
 
 # -------------------- USERS -------------------- #
 def create_user(db: Session, user: schemas.UserCreate):
+    # Check if user ID already exists
+    existing_user = db.query(models.User).filter(models.User.user_id == user.user_id).first()
+    if existing_user:
+        raise Exception("User ID already exists.")
+
     db_user = models.User(**user.dict())
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
+
 
 def get_users(db: Session):
     return db.query(models.User).all()
@@ -84,3 +90,18 @@ def delete_order(db: Session, order_id: int):
         db.delete(db_order)
         db.commit()
     return {"deleted": True}
+
+def log_admin_activity(db: Session, admin_name: str, action: str, target_table: str):
+    from app.models import AdminActivityLog
+    log = AdminActivityLog(
+        admin_name=admin_name,
+        action=action,
+        target_table=target_table
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log
+
+def get_admin_logs(db: Session):
+    return db.query(models.AdminActivityLog).order_by(models.AdminActivityLog.timestamp.desc()).all()

@@ -7,6 +7,9 @@ import re
 API_URL = "http://backend:8000"
 st.set_page_config(page_title="Amazon Admin", layout="wide")
 
+# ----------------- CUSTOM LIGHT THEME -----------------
+
+
 # ----------------- AUTHENTICATION -----------------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -15,7 +18,13 @@ if "login_error" not in st.session_state:
 
 if not st.session_state.authenticated:
     st.title("🔒 Admin Login")
+    st.markdown("""
+        <style>
+            .stTextInput>div>div>input { border-radius: 10px; }
+        </style>
+    """, unsafe_allow_html=True)
     with st.form("login_form"):
+        st.markdown("### Enter your admin credentials")
         email = st.text_input("Email")
         password = st.text_input("Password", type="password")
         login = st.form_submit_button("Login")
@@ -54,48 +63,63 @@ def is_valid_email(email):
     return re.match(r"[^@\s]+@[^@\s]+\.[a-zA-Z0-9]+$", email)
 
 # ----------------- SIDEBAR -----------------
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg", use_container_width=True)
 st.sidebar.title("Navigation")
-st.session_state.page = st.sidebar.radio("Go to", ["Home", "Users", "Products", "Orders"])
+st.session_state.page = st.sidebar.radio("Go to", ["Home", "Users", "Products", "Orders", "Activity Logs"])
 
 # ----------------- HOME PAGE -----------------
 if st.session_state.page == "Home":
-    st.title("Amazon Admin Dashboard")
-    st.write("Welcome! Use the sidebar to manage Users, Products, and Orders.")
+    st.title("🏠 Amazon Admin Dashboard")
+    st.markdown("""
+    Welcome to the **Admin Panel**. Use the navigation menu on the left to:
+
+    - 👤 Manage Users
+    - 📦 Manage Products
+    - 🛒 Track Orders
+    - 📜 View Admin Activity Logs
+
+    Ensure all actions are in line with platform policies.
+    """)
 # ----------------- USERS PAGE -----------------
 
 elif st.session_state.page == "Users":
     st.title("👤 Manage Users")
 
     with st.expander("➕ Add New User"):
-        with st.form("user_form"):
-            name = st.text_input("Name")
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-            phone = st.text_input("Phone")
-            role = st.selectbox("Role", ["customer", "seller"])  # removed "admin"
-            address = st.text_area("Address")
-            submit = st.form_submit_button("Create User")
+       with st.form("user_form"):
+        user_id = st.number_input("User ID", min_value=1, step=1)
+        name = st.text_input("Name")
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        phone = st.text_input("Phone")
+        role = st.selectbox("Role", ["customer", "seller"])  # removed "admin"
+        address = st.text_area("Address")
+        submit = st.form_submit_button("Create User")
 
-            if submit:
-                if not name or not email or not password:
-                    st.error("Name, Email, and Password are required.")
-                elif not is_valid_email(email):
-                    st.error("Invalid email format.")
+        if submit:
+            if not user_id or not name or not email or not password:
+                st.error("User ID, Name, Email, and Password are required.")
+            elif not is_valid_email(email):
+                st.error("Invalid email format.")
+            else:
+                data = {
+                    "user_id": user_id,
+                    "name": name,
+                    "email": email,
+                    "password": password,
+                    "phone_number": phone,
+                    "address": address,
+                    "role": role
+                }
+                res = requests.post(f"{API_URL}/users/", json=data)
+                if res.ok:
+                    st.success("User created successfully.")
+                    refresh_data()
                 else:
-                    data = {
-                        "name": name,
-                        "email": email,
-                        "password": password,
-                        "phone_number": phone,
-                        "address": address,
-                        "role": role
-                    }
-                    res = requests.post(f"{API_URL}/users/", json=data)
-                    if res.ok:
-                        st.success("User created successfully.")
-                        refresh_data()
-                    else:
-                        st.error("Failed to create user.")
+                    error_msg = res.json().get("detail", "Failed to create user.")
+                    st.error(error_msg)
+
+                    st.error(error_msg)
 
     if st.session_state.users_data:
         user_ids = [f"{u['user_id']} - {u['email']}" for u in st.session_state.users_data]
@@ -284,3 +308,27 @@ elif st.session_state.page == "Orders":
                 refresh_data()
             else:
                 st.error("Failed to delete order.")
+
+# ----------------- ACTIVITY LOGS PAGE -----------------
+elif st.session_state.page == "Activity Logs":
+    st.title("📜 Admin Activity Logs")
+    logs = requests.get(f"{API_URL}/admin-logs/").json()
+
+    if logs:
+        # Handle case where logs is a single dict instead of a list
+        if isinstance(logs, dict):
+            logs = [logs]
+        
+        # Proceed only if it's now a list of dictionaries
+        if isinstance(logs, list) and all(isinstance(item, dict) for item in logs):
+            df = pd.DataFrame(logs)
+
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.error("Unexpected format: logs should be a list of dictionaries.")
+    else:
+        st.info("No logs found.")
+

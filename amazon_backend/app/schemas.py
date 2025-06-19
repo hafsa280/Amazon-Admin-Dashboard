@@ -12,6 +12,9 @@ class UserBase(BaseModel):
     role: str
 
 class UserCreate(UserBase):
+    user_id: int  # Add this line
+    name: str
+    email: str
     password: str
 
 class User(UserBase):
@@ -53,6 +56,15 @@ class Order(OrderBase):
     id: int
     user_id: int
     order_date: datetime
+
+    class Config:
+        from_attributes = True
+        
+class AdminActivityLog(BaseModel):
+    admin_name: str
+    action: str
+    target_table: str
+    timestamp: datetime
 
     class Config:
         from_attributes = True
