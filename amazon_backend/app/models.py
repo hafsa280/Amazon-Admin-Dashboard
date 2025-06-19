@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Text, DECIMAL, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Text, DECIMAL, ForeignKey, Enum, Float, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
+from datetime import datetime
 
 class User(Base):
     __tablename__ = "users"
@@ -11,6 +12,8 @@ class User(Base):
     phone_number = Column(String(20), nullable=True)
     address = Column(Text, nullable=True)
     role = Column(Enum("customer", "seller", "admin", name="user_roles"), nullable=False)
+    orders = relationship("Order", back_populates="user")
+
 
 class Product(Base):
     __tablename__ = "products"
@@ -21,3 +24,14 @@ class Product(Base):
     price = Column(DECIMAL(10, 2), nullable=False)
     stock = Column(Integer, nullable=False)
     category = Column(String(100), nullable=True)
+    
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"))
+    total_amount = Column(Float)
+    status = Column(String, default="pending")
+    order_date = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="orders")

@@ -1,5 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
+
+# ------------------ USER ------------------ #
 
 class UserBase(BaseModel):
     name: str
@@ -13,9 +16,12 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     user_id: int
+    password: str
 
     class Config:
         orm_mode = True
+
+# ------------------ PRODUCT ------------------ #
 
 class ProductBase(BaseModel):
     name: str
@@ -33,3 +39,20 @@ class Product(ProductBase):
 
     class Config:
         orm_mode = True
+
+# ------------------ ORDER ------------------ #
+
+class OrderBase(BaseModel):
+    total_amount: float
+    status: Optional[str] = "pending"
+
+class OrderCreate(OrderBase):
+    user_id: int
+
+class Order(OrderBase):
+    id: int
+    user_id: int
+    order_date: datetime
+
+    class Config:
+        from_attributes = True

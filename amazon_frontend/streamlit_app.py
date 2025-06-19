@@ -1,221 +1,203 @@
 import streamlit as st
 import requests
 import pandas as pd
+from datetime import datetime
+import re
 
 API_URL = "http://backend:8000"
 st.set_page_config(page_title="Amazon Admin", layout="wide")
 
-# Initialize session state
+# ----------------- AUTHENTICATION -----------------
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "login_error" not in st.session_state:
+    st.session_state.login_error = False
+
+if not st.session_state.authenticated:
+    st.title("🔒 Admin Login")
+    with st.form("login_form"):
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        login = st.form_submit_button("Login")
+
+    if login:
+        users = requests.get(f"{API_URL}/users/").json()
+        for user in users:
+            if user['email'] == email and user['password'] == password and user['role'] == 'admin':
+                st.session_state.authenticated = True
+                st.rerun()
+        st.session_state.login_error = True
+
+    if st.session_state.login_error:
+        st.error("Invalid credentials or not an admin user.")
+    st.stop()
+
+# ----------------- SESSION INIT -----------------
 if "page" not in st.session_state:
     st.session_state.page = "home"
-if "users_data" not in st.session_state:
-    st.session_state.users_data = []
-if "products_data" not in st.session_state:
-    st.session_state.products_data = []
-if "selected_user_id" not in st.session_state:
-    st.session_state.selected_user_id = None
-if "selected_product_id" not in st.session_state:
-    st.session_state.selected_product_id = None
-if "confirm_delete_user" not in st.session_state:
-    st.session_state.confirm_delete_user = False
-if "confirm_delete_product" not in st.session_state:
-    st.session_state.confirm_delete_product = False
 if "form_reset" not in st.session_state:
     st.session_state.form_reset = False
 
+# ----------------- DATA FETCH -----------------
 def refresh_data():
     st.session_state.users_data = requests.get(f"{API_URL}/users/").json()
     st.session_state.products_data = requests.get(f"{API_URL}/products/").json()
+    st.session_state.orders_data = requests.get(f"{API_URL}/orders/").json()
 
 refresh_data()
 
+# ----------------- HELPERS -----------------
 def get_unique_categories():
     return sorted(set([p['category'] for p in st.session_state.products_data if p['category']]))
 
-# Home splash screen
-if st.session_state.page == "home":
-    st.markdown("## 👋 Welcome to the Amazon Admin Dashboard")
-    st.write("What would you like to manage?")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("👤 Manage Users", use_container_width=True):
-            st.session_state.page = "users"
-            st.rerun()
-    with col2:
-        if st.button("📦 Manage Products", use_container_width=True):
-            st.session_state.page = "products"
-            st.rerun()
+def is_valid_email(email):
+    return re.match(r"[^@\s]+@[^@\s]+\.[a-zA-Z0-9]+$", email)
 
-# Manage Users Page
-elif st.session_state.page == "users":
-    st.markdown("## 👤 Manage Users")
-    st.markdown(f"### 👥 Total Users: {len(st.session_state.users_data)}")
-    if st.button("🏠 Back to Home"):
-        st.session_state.page = "home"
-        st.rerun()
+# ----------------- SIDEBAR -----------------
+st.sidebar.title("Navigation")
+st.session_state.page = st.sidebar.radio("Go to", ["Home", "Users", "Products", "Orders"])
 
-    with st.expander("➕ Add New User", expanded=False):
-        with st.form("add_user"):
-            col1, col2 = st.columns(2)
-            name = col1.text_input("Name", value="" if st.session_state.form_reset else None)
-            email = col2.text_input("Email", value="" if st.session_state.form_reset else None)
-            password = st.text_input("Password", type="password", value="" if st.session_state.form_reset else None)
-            col3, col4 = st.columns(2)
-            phone = col3.text_input("Phone", value="" if st.session_state.form_reset else None)
-            role = col4.selectbox("Role", ["customer", "seller", "admin"])
-            address = st.text_area("Address", value="" if st.session_state.form_reset else None)
+# ----------------- HOME PAGE -----------------
+if st.session_state.page == "Home":
+    st.title("Amazon Admin Dashboard")
+    st.write("Welcome! Use the sidebar to manage Users, Products, and Orders.")
+# ----------------- USERS PAGE -----------------
+
+elif st.session_state.page == "Users":
+    st.title("👤 Manage Users")
+
+    with st.expander("➕ Add New User"):
+        with st.form("user_form"):
+            name = st.text_input("Name")
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+            phone = st.text_input("Phone")
+            role = st.selectbox("Role", ["customer", "seller"])  # removed "admin"
+            address = st.text_area("Address")
             submit = st.form_submit_button("Create User")
+
             if submit:
-                data = {
-                    "name": name, "email": email, "password": password,
-                    "phone_number": phone, "address": address, "role": role
-                }
-                res = requests.post(f"{API_URL}/users/", json=data)
-                if res.ok:
-                    st.success("User created successfully.")
-                    st.session_state.form_reset = True
-                    refresh_data()
-                    st.rerun()
+                if not name or not email or not password:
+                    st.error("Name, Email, and Password are required.")
+                elif not is_valid_email(email):
+                    st.error("Invalid email format.")
                 else:
-                    st.error("Failed to create user.")
-    st.session_state.form_reset = False
-
-    st.divider()
-    st.markdown("### 📋 Existing Users")
-    user_df = pd.DataFrame([{
-        "ID": u["user_id"],
-        "Name": u["name"],
-        "Email": u["email"],
-        "Role": u["role"],
-        "Phone": u["phone_number"],
-        "Address": u["address"]
-    } for u in st.session_state.users_data])
-    st.dataframe(user_df.style.set_properties(**{"text-align": "center"}), use_container_width=True)
-
-    user_ids = [str(u['user_id']) + " - " + u['name'] for u in st.session_state.users_data]
-    selected = st.selectbox("Select a user to edit or delete:", ["None"] + user_ids)
-    if selected != "None":
-        selected_user_id = int(selected.split(" - ")[0])
-        selected_user = next((u for u in st.session_state.users_data if u["user_id"] == selected_user_id), None)
-        if selected_user:
-            st.markdown("#### ✏️ Edit User")
-            with st.form("edit_user_form"):
-                col1, col2 = st.columns(2)
-                new_name = col1.text_input("Name", selected_user["name"])
-                new_email = col2.text_input("Email", selected_user["email"])
-                col3, col4 = st.columns(2)
-                new_phone = col3.text_input("Phone", selected_user["phone_number"] or "")
-                new_role = col4.selectbox("Role", ["customer", "seller", "admin"],
-                                          index=["customer", "seller", "admin"].index(selected_user["role"]))
-                new_address = st.text_area("Address", selected_user["address"] or "")
-                new_password = st.text_input("New Password", type="password", value="")
-                update_btn = st.form_submit_button("Update")
-                if update_btn:
-                    updated_data = {
-                        "name": new_name,
-                        "email": new_email,
-                        "phone_number": new_phone,
-                        "address": new_address,
-                        "role": new_role,
-                        "password": new_password or "Temp@1234"
+                    data = {
+                        "name": name,
+                        "email": email,
+                        "password": password,
+                        "phone_number": phone,
+                        "address": address,
+                        "role": role
                     }
-                    res = requests.put(f"{API_URL}/users/{selected_user_id}", json=updated_data)
+                    res = requests.post(f"{API_URL}/users/", json=data)
                     if res.ok:
-                        st.success("User updated.")
+                        st.success("User created successfully.")
                         refresh_data()
-                        st.rerun()
                     else:
-                        st.error("Update failed.")
+                        st.error("Failed to create user.")
 
-            if st.button("🗑️ Delete This User"):
-                st.session_state.confirm_delete_user = not st.session_state.confirm_delete_user
+    if st.session_state.users_data:
+        user_ids = [f"{u['user_id']} - {u['email']}" for u in st.session_state.users_data]
+        selected = st.selectbox("Select user to update/delete:", ["None"] + user_ids)
 
-            if st.session_state.confirm_delete_user:
-                st.warning("Are you sure you want to delete this user?")
-                col1, col2 = st.columns(2)
-                if col1.button("✅ Yes, delete user"):
-                    res = requests.delete(f"{API_URL}/users/{selected_user_id}")
+        if selected != "None":
+            user_id = int(selected.split(" - ")[0])
+            user = next(u for u in st.session_state.users_data if u['user_id'] == user_id)
+
+            is_admin = user['role'] == 'admin'
+
+            if is_admin:
+                st.warning("⚠️ Admin users cannot be updated or deleted.")
+            else:
+                st.subheader("✏️ Update User")
+                with st.form("edit_user_form"):
+                    new_name = st.text_input("Name", user['name'])
+                    new_email = st.text_input("Email", user['email'])
+                    new_password = st.text_input("Password", type="password")
+                    new_phone = st.text_input("Phone", user.get('phone_number', ''))
+                    new_address = st.text_area("Address", user.get('address', ''))
+                    new_role = st.selectbox("Role", ["customer", "seller"], index=["customer", "seller"].index(user['role']))
+                    update_btn = st.form_submit_button("Update")
+
+                    if update_btn:
+                        updated_data = {
+                            "name": new_name,
+                            "email": new_email,
+                            "password": new_password,
+                            "phone_number": new_phone,
+                            "address": new_address,
+                            "role": new_role
+                        }
+                        res = requests.put(f"{API_URL}/users/{user_id}", json=updated_data)
+                        if res.ok:
+                            st.success("User updated.")
+                            refresh_data()
+                        else:
+                            st.error("Update failed.")
+
+                if st.button("🗑️ Delete This User"):
+                    res = requests.delete(f"{API_URL}/users/{user_id}")
                     if res.ok:
                         st.success("User deleted.")
-                        st.session_state.confirm_delete_user = False
                         refresh_data()
-                        st.rerun()
-                if col2.button("❌ Cancel"):
-                    st.session_state.confirm_delete_user = False
-# Manage Products Page
-elif st.session_state.page == "products":
-    st.markdown("## 📦 Manage Products")
-    st.markdown(f"### 📦 Total Products: {len(st.session_state.products_data)}")
-    if st.button("🏠 Back to Home"):
-        st.session_state.page = "home"
-        st.rerun()
+                    else:
+                        st.error("Failed to delete user.")
 
-    with st.expander("➕ Add New Product", expanded=False):
-        with st.form("add_product"):
-            col1, col2 = st.columns(2)
-            name = col1.text_input("Product Name", value="" if st.session_state.form_reset else None)
-            description = col2.text_input("Product Description", value="" if st.session_state.form_reset else None)
-            col3, col4 = st.columns(2)
-            price = col3.number_input("$ Price", min_value=0.01, format="%.2f")
-            stock = col4.number_input("Stock", min_value=0, step=1)
-            category = st.selectbox("Category", options=(get_unique_categories() + ["Other"]))
-            if category == "Other":
-                category = st.text_input("Enter New Category")
-            st.markdown("**Enter existing seller's User ID (who is a seller)**")
+# ----------------- PRODUCTS PAGE -----------------
+elif st.session_state.page == "Products":
+    st.title("📦 Manage Products")
+    with st.expander("➕ Add New Product"):
+        with st.form("product_form"):
+            name = st.text_input("Product Name")
+            description = st.text_input("Description")
+            price = st.number_input("Price", min_value=0.01)
+            stock = st.number_input("Stock", min_value=0)
+            category = st.text_input("Category")
             seller_id = st.number_input("Seller ID", min_value=1, step=1)
             submit = st.form_submit_button("Create Product")
+
             if submit:
-                data = {
-                    "name": name,
-                    "description": description,
-                    "price": price,
-                    "stock": stock,
-                    "category": category,
-                    "seller_id": seller_id
-                }
-                res = requests.post(f"{API_URL}/products/", json=data)
-                if res.ok:
-                    st.success("Product created successfully.")
-                    st.session_state.form_reset = True
-                    refresh_data()
-                    st.rerun()
+                if not name:
+                    st.error("Product name is required.")
+                elif price <= 0 or stock < 0:
+                    st.error("Invalid price or stock values.")
+                elif seller_id <= 0:
+                    st.error("Invalid seller ID.")
                 else:
-                    st.error("Failed to create product.")
+                    product_data = {
+                        "name": name,
+                        "description": description,
+                        "price": price,
+                        "stock": stock,
+                        "category": category,
+                        "seller_id": seller_id
+                    }
+                    res = requests.post(f"{API_URL}/products/", json=product_data)
+                    if res.ok:
+                        st.success("Product created successfully.")
+                        refresh_data()
+                    else:
+                        st.error("Failed to create product.")
 
-    st.session_state.form_reset = False
+    if st.session_state.products_data:
+        product_ids = [f"{p['product_id']} - {p['name']}" for p in st.session_state.products_data]
+        selected = st.selectbox("Select product to update/delete:", ["None"] + product_ids)
+        if selected != "None":
+            product_id = int(selected.split(" - ")[0])
+            product = next(p for p in st.session_state.products_data if p['product_id'] == product_id)
 
-    st.divider()
-    st.markdown("### 📋 Existing Products")
-    product_df = pd.DataFrame([{
-        "ID": p["product_id"],
-        "Name": p["name"],
-        "Description": p["description"],
-        "Price": f"${p['price']:.2f}",
-        "Stock": p["stock"],
-        "Category": p["category"],
-        "Seller ID": p["seller_id"]
-    } for p in st.session_state.products_data])
-    st.dataframe(product_df.style.set_properties(**{"text-align": "center"}), use_container_width=True)
-
-    product_ids = [str(p['product_id']) + " - " + p['name'] for p in st.session_state.products_data]
-    selected = st.selectbox("Select a product to edit or delete:", ["None"] + product_ids)
-    if selected != "None":
-        selected_product_id = int(selected.split(" - ")[0])
-        selected_product = next((p for p in st.session_state.products_data if p["product_id"] == selected_product_id), None)
-        if selected_product:
-            st.markdown("#### ✏️ Edit Product")
+            st.subheader("✏️ Update Product")
             with st.form("edit_product_form"):
-                col1, col2 = st.columns(2)
-                new_name = col1.text_input("Name", selected_product["name"])
-                new_description = col2.text_input("Description", selected_product["description"])
-                col3, col4 = st.columns(2)
-                new_price = col3.number_input("Price", value=float(selected_product["price"]))
-                new_stock = col4.number_input("Stock", value=selected_product["stock"], step=1)
-                new_category = st.text_input("Category", selected_product["category"])
-                new_seller_id = st.number_input("Seller ID", value=selected_product["seller_id"], step=1)
+                new_name = st.text_input("Product Name", product['name'])
+                new_description = st.text_input("Description", product['description'])
+                new_price = st.number_input("Price", min_value=0.01, value=product['price'])
+                new_stock = st.number_input("Stock", min_value=0, value=product['stock'])
+                new_category = st.text_input("Category", product['category'])
+                new_seller_id = st.number_input("Seller ID", min_value=1, step=1, value=product['seller_id'])
                 update_btn = st.form_submit_button("Update")
                 if update_btn:
-                    updated_data = {
+                    updated_product = {
                         "name": new_name,
                         "description": new_description,
                         "price": new_price,
@@ -223,26 +205,82 @@ elif st.session_state.page == "products":
                         "category": new_category,
                         "seller_id": new_seller_id
                     }
-                    res = requests.put(f"{API_URL}/products/{selected_product_id}", json=updated_data)
+                    res = requests.put(f"{API_URL}/products/{product_id}", json=updated_product)
                     if res.ok:
                         st.success("Product updated.")
                         refresh_data()
-                        st.rerun()
                     else:
                         st.error("Update failed.")
 
             if st.button("🗑️ Delete This Product"):
-                st.session_state.confirm_delete_product = not st.session_state.confirm_delete_product
+                res = requests.delete(f"{API_URL}/products/{product_id}")
+                if res.ok:
+                    st.success("Product deleted.")
+                    refresh_data()
+                else:
+                    st.error("Failed to delete product.")
+                    
+# ----------------- ORDERS PAGE -----------------
+elif st.session_state.page == "Orders":
+    st.title("🛒 Manage Orders")
+    st.write(f"Total Orders: {len(st.session_state.orders_data)}")
 
-            if st.session_state.confirm_delete_product:
-                st.warning("Are you sure you want to delete this product?")
-                col1, col2 = st.columns(2)
-                if col1.button("✅ Yes, delete product"):
-                    res = requests.delete(f"{API_URL}/products/{selected_product_id}")
+    with st.expander("➕ Create New Order"):
+        with st.form("order_form"):
+            user_id = st.number_input("User ID", min_value=1, step=1)
+            total_amount = st.number_input("Total Amount", min_value=0.01)
+            status = st.selectbox("Order Status", ["pending", "shipped", "delivered", "cancelled"])
+            submit = st.form_submit_button("Create Order")
+
+            if submit:
+                if user_id <= 0 or total_amount <= 0:
+                    st.error("Invalid input. Please ensure all fields are filled correctly.")
+                else:
+                    order_data = {
+                        "user_id": user_id,
+                        "total_amount": total_amount,
+                        "status": status
+                    }
+                    res = requests.post(f"{API_URL}/orders/", json=order_data)
                     if res.ok:
-                        st.success("Product deleted.")
-                        st.session_state.confirm_delete_product = False
+                        st.success("Order created successfully.")
                         refresh_data()
-                        st.rerun()
-                if col2.button("❌ Cancel"):
-                    st.session_state.confirm_delete_product = False
+                    else:
+                        st.error("Failed to create order. Ensure user exists.")
+
+    df = pd.DataFrame(st.session_state.orders_data)
+    if not df.empty:
+        df['order_date'] = pd.to_datetime(df['order_date']).dt.strftime("%Y-%m-%d %H:%M")
+        st.dataframe(df, use_container_width=True)
+
+    order_ids = [f"{o['id']} - User {o['user_id']}" for o in st.session_state.orders_data]
+    selected = st.selectbox("Select order to update/delete:", ["None"] + order_ids)
+    if selected != "None":
+        order_id = int(selected.split(" - ")[0])
+        order = next(o for o in st.session_state.orders_data if o['id'] == order_id)
+
+        st.subheader("✏️ Update Order")
+        with st.form("edit_order_form"):
+            new_status = st.selectbox("Status", ["pending", "shipped", "delivered", "cancelled"], index=["pending", "shipped", "delivered", "cancelled"].index(order['status']))
+            new_total = st.number_input("Total Amount", min_value=0.01, value=order['total_amount'])
+            update_btn = st.form_submit_button("Update")
+            if update_btn:
+                updated_data = {
+                    "user_id": order['user_id'],
+                    "status": new_status,
+                    "total_amount": new_total
+                }
+                res = requests.put(f"{API_URL}/orders/{order_id}", json=updated_data)
+                if res.ok:
+                    st.success("Order updated.")
+                    refresh_data()
+                else:
+                    st.error("Update failed.")
+
+        if st.button("🗑️ Delete This Order"):
+            res = requests.delete(f"{API_URL}/orders/{order_id}")
+            if res.ok:
+                st.success("Order deleted.")
+                refresh_data()
+            else:
+                st.error("Failed to delete order.")
